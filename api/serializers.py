@@ -22,11 +22,11 @@ class MessageSerializer(serializers.ModelSerializer):
 
 class MessageThreadSerializer(serializers.ModelSerializer):
     participants = UserSerializer(many=True, read_only=True)
-    messages = serializers.SerializerMethodField()  # Include messages if needed
+    messages = serializers.SerializerMethodField()
 
     class Meta:
         model = MessageThread
-        fields = ["id", "participants", "messages"]  # Add 'messages' if needed
+        fields = ["id", "participants", "messages"]
         ref_name = "MessageThread"
 
     def get_messages(self, obj):
