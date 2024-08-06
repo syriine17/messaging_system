@@ -1,5 +1,6 @@
 from django.shortcuts import get_object_or_404
 from django.contrib.auth.models import User
+from django.core.cache import cache
 from rest_framework import generics
 from rest_framework.permissions import IsAuthenticated
 
@@ -96,10 +97,17 @@ class MessageListCreateView(generics.ListCreateAPIView):
 
     def get_queryset(self):
         user = self.request.user
-        # Get all threads the user is part of
-        threads = MessageThread.objects.filter(participants=user)
-        # Get all messages in these threads
-        return Message.objects.filter(thread__in=threads)
+        cache_key = f"user_messages_{user.id}"
+        messages = cache.get(cache_key)
+
+        if not messages:
+            threads = MessageThread.objects.filter(participants=user)
+            messages = Message.objects.filter(thread__in=threads)
+            # caching the list of messages for a user can improve
+            # performance if the same data is requested frequently.
+            cache.set(cache_key, messages, timeout=60 * 15)  # Cache for 15 minutes
+
+        return messages
 
     def perform_create(self, serializer):
         thread_id = self.request.data.get("thread")
