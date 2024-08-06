@@ -1,3 +1,4 @@
+import logging
 from django.shortcuts import get_object_or_404
 from django.contrib.auth.models import User
 from django.core.cache import cache
@@ -7,6 +8,9 @@ from rest_framework.permissions import IsAuthenticated
 from api.tasks import send_email_task
 from .models import Message, MessageThread
 from .serializers import MessageSerializer, MessageThreadSerializer, UserSerializer
+
+# Configure logger
+logger = logging.getLogger(__name__)
 
 
 class UserCreateView(generics.CreateAPIView):
@@ -22,6 +26,14 @@ class UserCreateView(generics.CreateAPIView):
 
     queryset = User.objects.all()
     serializer_class = UserSerializer
+
+    def perform_create(self, serializer):
+        try:
+            serializer.save()
+            logger.info(f"User created: {serializer.validated_data['username']}")
+        except Exception as e:
+            logger.error(f"Error creating user: {str(e)}")
+            raise
 
 
 class SendMessageView(generics.CreateAPIView):
@@ -40,27 +52,34 @@ class SendMessageView(generics.CreateAPIView):
     permission_classes = [IsAuthenticated]
 
     def perform_create(self, serializer):
-        recipient_id = self.request.data.get("recipient")
-        recipient = get_object_or_404(User, id=recipient_id)
+        try:
+            recipient_id = self.request.data.get("recipient")
+            recipient = get_object_or_404(User, id=recipient_id)
 
-        # Find or create a thread
-        thread, created = MessageThread.objects.get_or_create(
-            participants__in=[self.request.user, recipient]
-        )
-        if not created:
-            # Add the recipient to the thread if not already present
-            if not thread.participants.filter(id=recipient.id).exists():
-                thread.participants.add(recipient)
+            # Find or create a thread
+            thread, created = MessageThread.objects.get_or_create(
+                participants__in=[self.request.user, recipient]
+            )
+            if not created:
+                # Add the recipient to the thread if not already present
+                if not thread.participants.filter(id=recipient.id).exists():
+                    thread.participants.add(recipient)
 
-        serializer.save(sender=self.request.user, thread=thread)
+            serializer.save(sender=self.request.user, thread=thread)
 
-        # Send an email notification asynchronously
-        send_email_task.delay(
-            subject="New Message Notification",
-            message=f"You have a new message from {self.request.user.username}: {self.request.data.get('content')}",
-            from_email="no-reply@example.com",
-            recipient_list=[recipient.email],
-        )
+            # Send an email notification asynchronously
+            send_email_task.delay(
+                subject="New Message Notification",
+                message=f"You have a new message from {self.request.user.username}: {self.request.data.get('content')}",
+                from_email="no-reply@example.com",
+                recipient_list=[recipient.email],
+            )
+            logger.info(
+                f"Message sent from {self.request.user.username} to {recipient.username}"
+            )
+        except Exception as e:
+            logger.error(f"Error sending message: {str(e)}")
+            raise
 
 
 class MessageThreadListCreateView(generics.ListAPIView):
@@ -101,18 +120,30 @@ class MessageListCreateView(generics.ListCreateAPIView):
         messages = cache.get(cache_key)
 
         if not messages:
-            threads = MessageThread.objects.filter(participants=user)
-            messages = Message.objects.filter(thread__in=threads)
-            # caching the list of messages for a user can improve
-            # performance if the same data is requested frequently.
-            cache.set(cache_key, messages, timeout=60 * 15)  # Cache for 15 minutes
+            try:
+                threads = MessageThread.objects.filter(participants=user)
+                messages = Message.objects.filter(thread__in=threads)
+                # Caching the list of messages for a user can improve
+                # performance if the same data is requested frequently.
+                cache.set(cache_key, messages, timeout=60 * 15)  # Cache for 15 minutes
+                logger.info(f"Messages cached for user {user.id}")
+            except Exception as e:
+                logger.error(f"Error retrieving or caching messages: {str(e)}")
+                raise
 
         return messages
 
     def perform_create(self, serializer):
-        thread_id = self.request.data.get("thread")
-        thread = get_object_or_404(MessageThread, id=thread_id)
-        serializer.save(sender=self.request.user, thread=thread)
+        try:
+            thread_id = self.request.data.get("thread")
+            thread = get_object_or_404(MessageThread, id=thread_id)
+            serializer.save(sender=self.request.user, thread=thread)
+            logger.info(
+                f"Message created in thread {thread_id} by user {self.request.user.id}"
+            )
+        except Exception as e:
+            logger.error(f"Error creating message: {str(e)}")
+            raise
 
 
 class SearchMessagesView(generics.ListAPIView):
@@ -151,18 +182,25 @@ class SearchMessagesView(generics.ListAPIView):
         query = self.request.query_params.get("q", "")
         thread_id = self.request.query_params.get("thread_id", None)
 
-        # Get all threads the user is part of
-        threads = MessageThread.objects.filter(participants=user)
+        try:
+            # Get all threads the user is part of
+            threads = MessageThread.objects.filter(participants=user)
 
-        # Base queryset for messages in these threads
-        queryset = Message.objects.filter(thread__in=threads)
+            # Base queryset for messages in these threads
+            queryset = Message.objects.filter(thread__in=threads)
 
-        # Filter by content if provided
-        if query:
-            queryset = queryset.filter(content__icontains=query)
+            # Filter by content if provided
+            if query:
+                queryset = queryset.filter(content__icontains=query)
 
-        # Filter by thread ID if provided
-        if thread_id:
-            queryset = queryset.filter(thread_id=thread_id)
+            # Filter by thread ID if provided
+            if thread_id:
+                queryset = queryset.filter(thread_id=thread_id)
 
-        return queryset
+            logger.info(
+                f"Search performed with query '{query}' and thread_id '{thread_id}'"
+            )
+            return queryset
+        except Exception as e:
+            logger.error(f"Error performing search: {str(e)}")
+            raise
