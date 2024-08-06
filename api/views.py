@@ -2,6 +2,8 @@ from django.shortcuts import get_object_or_404
 from django.contrib.auth.models import User
 from rest_framework import generics
 from rest_framework.permissions import IsAuthenticated
+
+from api.tasks import send_email_task
 from .models import Message, MessageThread
 from .serializers import MessageSerializer, MessageThreadSerializer, UserSerializer
 
@@ -50,6 +52,14 @@ class SendMessageView(generics.CreateAPIView):
                 thread.participants.add(recipient)
 
         serializer.save(sender=self.request.user, thread=thread)
+
+        # Send an email notification asynchronously
+        send_email_task.delay(
+            subject="New Message Notification",
+            message=f"You have a new message from {self.request.user.username}: {self.request.data.get('content')}",
+            from_email="no-reply@example.com",
+            recipient_list=[recipient.email],
+        )
 
 
 class MessageThreadListCreateView(generics.ListAPIView):
@@ -100,14 +110,14 @@ class MessageListCreateView(generics.ListCreateAPIView):
 class SearchMessagesView(generics.ListAPIView):
     """
     Search for messages based on content within threads for the logged-in user.
-    
-    This endpoint allows users to search for messages by content and optionally 
+
+    This endpoint allows users to search for messages by content and optionally
     filter messages by thread.
 
     ---
     request:
-      description: 
-        - The search parameters are provided as URL query parameters. 
+      description:
+        - The search parameters are provided as URL query parameters.
         - Example: `?q=search_term&thread_id=1`
       parameters:
         - name: q
@@ -119,8 +129,8 @@ class SearchMessagesView(generics.ListAPIView):
           required: false
           description: Filter messages that belong to this specific thread.
     response:
-      description: 
-        - A list of messages matching the search criteria. 
+      description:
+        - A list of messages matching the search criteria.
         - Messages are returned in a list, and each message object contains details such as sender, content, and creation time.
       serializer: MessageSerializer
     """
@@ -142,7 +152,7 @@ class SearchMessagesView(generics.ListAPIView):
         # Filter by content if provided
         if query:
             queryset = queryset.filter(content__icontains=query)
-        
+
         # Filter by thread ID if provided
         if thread_id:
             queryset = queryset.filter(thread_id=thread_id)

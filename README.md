@@ -8,6 +8,9 @@ This is a RESTful Django-based API for creating and retrieving messages between 
 - Sending messages to other users
 - Retrieving message threads between the logged-in user and other users
 - Searching for a word or phrase within a message thread
+- Asynchronous email notifications using Celery
+- Task monitoring with Flower
+- Local email testing with MailHog
 
 ## Setup
 
@@ -16,16 +19,18 @@ This is a RESTful Django-based API for creating and retrieving messages between 
 - Python 3.x
 - pip
 - virtualenv
+- Redis (for Celery)
+- MailHog (for email testing)
 
 ### Installation
 
-1. Clone the repository:
+1. **Clone the repository:**
     ```sh
     git clone git@github.com:syriine17/messaging_system.git
     cd messaging_system
     ```
 
-2. Create and activate a virtual environment:
+2. **Create and activate a virtual environment:**
     ```sh
     # On Windows
     python -m venv venv
@@ -36,25 +41,67 @@ This is a RESTful Django-based API for creating and retrieving messages between 
     source venv/bin/activate
     ```
 
-3. Install the required packages:
+3. **Install the required packages:**
     ```sh
     pip install -r requirements.txt
     ```
 
-4. Apply migrations:
+4. **Apply migrations:**
     ```sh
     python manage.py migrate
     ```
 
-5. Create a superuser (optional, for accessing the Django admin panel):
+5. **Create a superuser (optional, for accessing the Django admin panel):**
     ```sh
     python manage.py createsuperuser
     ```
 
-6. Run the development server:
+6. **Run the development server:**
     ```sh
     python manage.py runserver
     ```
+
+## Celery Setup
+
+Celery is used for asynchronous task processing, such as sending email notifications.
+
+1. **Install Redis:**
+   - For macOS, use Homebrew:
+     ```sh
+     brew install redis
+     ```
+   - For other systems, follow [Redis installation instructions](https://redis.io/download).
+
+2. **Start Redis:**
+    ```sh
+    redis-server
+    ```
+
+3. **Install Celery:**
+   ```sh
+   pip install celery
+   ```
+
+4. **Run Celery Worker:**
+    ```sh
+   celery -A messaging_system worker --loglevel=info
+   ```
+
+## Flower Setup
+
+Flower is a web-based tool for monitoring Celery tasks.
+Access Flower's web interface at http://localhost:5555.
+
+1. **Install Flower:**
+    ```sh
+    pip install flower
+    ```
+
+2. **Run Flower:**
+    ```sh
+    celery -A messaging_system flower
+    ```
+
 
 ## Testing
 
@@ -105,6 +152,34 @@ To ensure everything is working correctly, run the test suite:
 ```sh
 python manage.py test
 
+```
+
+## MailHog Setup
+
+MailHog is used for testing email functionality locally.
+Access MailHog's web interface at http://localhost:8025.
+
+### Install MailHog
+
+- **For macOS**, use Homebrew:
+    ```sh
+    brew install mailhog
+    ```
+
+- **For other systems**, download MailHog from the [MailHog releases page](https://github.com/mailhog/MailHog/releases).
+
+### Start MailHog
+
+```sh
+mailhog
+```
+
+### Configure Email Backend in Django
+
+```sh
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'localhost'
+EMAIL_PORT = 1025
 ```
 
 ## Swagger Documentation
